@@ -1,0 +1,24 @@
+name: pata_game
+description: A Patapon-inspired 2D platformer game for Android
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flame: ^1.22.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - patapons_draw/
+    - assets/images/
