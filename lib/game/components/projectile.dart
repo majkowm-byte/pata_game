@@ -2,12 +2,15 @@ import 'dart:math' show sin, cos, pi;
 import 'package:flame/collisions.dart';
 import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
+import 'boss.dart';
 import 'enemy.dart';
 import 'particle_effect.dart';
+import '../audio/retro_sfx.dart';
 
 class Projectile extends PositionComponent with CollisionCallbacks, HasGameRef {
   final double direction;
   final int damage;
+  final double verticalSpeed;
   double _lifetime = 0;
   double _rotation = 0;
   double _trailTimer = 0;
@@ -16,6 +19,7 @@ class Projectile extends PositionComponent with CollisionCallbacks, HasGameRef {
     required Vector2 startPos,
     required this.direction,
     this.damage = 1,
+    this.verticalSpeed = 0,
   }) {
     position = startPos;
   }
@@ -30,6 +34,7 @@ class Projectile extends PositionComponent with CollisionCallbacks, HasGameRef {
   void update(double dt) {
     super.update(dt);
     position.x += direction * 350 * dt;
+    position.y += verticalSpeed * dt;
     _lifetime += dt;
     _rotation += dt * 12 * direction;
 
@@ -48,7 +53,13 @@ class Projectile extends PositionComponent with CollisionCallbacks, HasGameRef {
     super.onCollision(intersectionPoints, other);
     if (other is Enemy && !other.isDead) {
       other.hit(damage);
+      RetroSfx.instance.hit();
       gameRef.world.add(CollectEffect(pos: position + size / 2, color: Colors.orange));
+      removeFromParent();
+    } else if (other is Boss && !other.isDead) {
+      other.hit(damage);
+      RetroSfx.instance.hit();
+      gameRef.world.add(CollectEffect(pos: position + size / 2, color: Colors.red));
       removeFromParent();
     }
   }

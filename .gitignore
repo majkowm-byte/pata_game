@@ -17,6 +17,11 @@ android/local.properties
 *.apk
 *.aab
 
+# Signing
+android/key.properties
+*.jks
+*.keystore
+
 # IDE
 .idea/
 *.iml

@@ -1,11 +1,13 @@
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 import '../game/pata_game.dart';
+import '../game/levels/level.dart';
 import '../models/patapon_data.dart';
 
 class GameScreen extends StatefulWidget {
   final PataponData pataponData;
-  const GameScreen({super.key, required this.pataponData});
+  final bool shieldMode;
+  const GameScreen({super.key, required this.pataponData, this.shieldMode = false});
 
   @override
   State<GameScreen> createState() => _GameScreenState();
@@ -17,7 +19,14 @@ class _GameScreenState extends State<GameScreen> {
   @override
   void initState() {
     super.initState();
-    _game = PataGame(pataponData: widget.pataponData);
+    _game = PataGame(pataponData: widget.pataponData, shieldMode: widget.shieldMode);
+  }
+
+  @override
+  void dispose() {
+    _game.pauseEngine();
+    _game.onRemove();
+    super.dispose();
   }
 
   @override
@@ -30,6 +39,23 @@ class _GameScreenState extends State<GameScreen> {
             overlayBuilderMap: {
               'GameOver': (context, game) => _GameOverOverlay(game: game),
               'LevelComplete': (context, game) => _LevelCompleteOverlay(game: game),
+              'GameWon': (context, game) => _GameWonOverlay(game: game),
+              'UpgradeChoice': (context, game) => _UpgradeChoiceOverlay(game: game),
+              'BossIntro': (context, game) => _BossIntroOverlay(game: game),
+            },
+          ),
+          // Screen flash
+          ValueListenableBuilder<GameState>(
+            valueListenable: _game.stateNotifier,
+            builder: (context, state, _) {
+              if (state.screenFlash > 0) {
+                return Positioned.fill(
+                  child: IgnorePointer(
+                    child: Container(color: Colors.white.withOpacity(0.4)),
+                  ),
+                );
+              }
+              return const SizedBox.shrink();
             },
           ),
           // HUD
@@ -40,79 +66,174 @@ class _GameScreenState extends State<GameScreen> {
             child: ValueListenableBuilder<GameState>(
               valueListenable: _game.stateNotifier,
               builder: (context, state, _) {
-                return Row(
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // HP hearts
                     Row(
-                      children: List.generate(state.maxHp, (i) {
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 2),
-                          child: Icon(
-                            i < state.hp ? Icons.favorite : Icons.favorite_border,
-                            color: Colors.red,
-                            size: 24,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          margin: const EdgeInsets.only(right: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.black54,
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                        );
-                      }),
+                          child: Text(
+                            'Lv.${state.currentLevel}',
+                            style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        if (state.shieldMode)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            margin: const EdgeInsets.only(right: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withOpacity(0.5),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.shield, color: Colors.white, size: 14),
+                                SizedBox(width: 2),
+                                Text('TARCZA', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                              ],
+                            ),
+                          ),
+                        Row(
+                          children: List.generate(state.maxHp, (i) {
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 2),
+                              child: Icon(
+                                i < state.hp ? Icons.favorite : Icons.favorite_border,
+                                color: Colors.red,
+                                size: 20,
+                              ),
+                            );
+                          }),
+                        ),
+                        const Spacer(),
+                        // Weapon size
+                        if (state.weaponLevel > 0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withOpacity(0.6),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '⚔️ ${(state.weaponMultiplier * 100).toStringAsFixed(0)}%',
+                              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        if (state.speedLevel > 0) ...[
+                          const SizedBox(width: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.cyan.withOpacity(0.6),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              'SPD+${state.speedLevel}',
+                              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ],
+                        if (state.jumpLevel > 0) ...[
+                          const SizedBox(width: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.green.withOpacity(0.6),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              'JMP+${state.jumpLevel}',
+                              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(8)),
+                          child: Text('🪙 ${state.coins}/${state.nextUpgradeCost}', style: const TextStyle(color: Colors.amber, fontSize: 12)),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 16),
-                    // Ammo
-                    if (state.ammo > 0) ...[
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.black54,
-                          borderRadius: BorderRadius.circular(8),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        if (state.ammo > 0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            margin: const EdgeInsets.only(right: 6),
+                            decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(8)),
+                            child: Text('🌭 ${state.ammo}', style: const TextStyle(color: Colors.white, fontSize: 12)),
+                          ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          margin: const EdgeInsets.only(right: 6),
+                          decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(8)),
+                          child: Text('⚡ ${state.lightnings}', style: const TextStyle(color: Color(0xFF00BFFF), fontSize: 12)),
                         ),
-                        child: Text(
-                          '🌭 ${state.ammo}',
-                          style: const TextStyle(color: Colors.white, fontSize: 16),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                    ],
-                    // Shield
-                    if (state.hasShield)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.5),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Text('🛡️', style: TextStyle(fontSize: 16)),
-                      ),
-                    // Active power-up
-                    if (state.activePowerUp != null) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.purple.withOpacity(0.5),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          state.activePowerUp!,
-                          style: const TextStyle(color: Colors.white, fontSize: 14),
-                        ),
-                      ),
-                    ],
-                    const Spacer(),
-                    // Coins
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        '🪙 ${state.coins}',
-                        style: const TextStyle(color: Colors.amber, fontSize: 16),
-                      ),
+                        if (state.shieldTimer > 0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            margin: const EdgeInsets.only(right: 6),
+                            decoration: BoxDecoration(color: Colors.blue.withOpacity(0.5), borderRadius: BorderRadius.circular(8)),
+                            child: Text('🛡️ ${state.shieldTimer.ceil()}s', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                          ),
+                        if (state.hasShield && state.shieldTimer <= 0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(color: Colors.blue.withOpacity(0.5), borderRadius: BorderRadius.circular(8)),
+                            child: const Text('🛡️', style: TextStyle(fontSize: 12)),
+                          ),
+                        if (state.activePowerUp != null)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(color: Colors.purple.withOpacity(0.5), borderRadius: BorderRadius.circular(8)),
+                            child: Text(state.activePowerUp!, style: const TextStyle(color: Colors.white, fontSize: 12)),
+                          ),
+                      ],
                     ),
                   ],
                 );
               },
             ),
+          ),
+          // Power-up toast
+          ValueListenableBuilder<GameState>(
+            valueListenable: _game.stateNotifier,
+            builder: (context, state, _) {
+              if (state.powerUpToast == null) return const SizedBox.shrink();
+              return Positioned(
+                top: 100,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.75),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.amber.withOpacity(0.6), width: 2),
+                      boxShadow: [BoxShadow(color: Colors.amber.withOpacity(0.3), blurRadius: 10)],
+                    ),
+                    child: Text(
+                      state.powerUpToast!,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
           // Mobile controls
           Positioned(
@@ -121,7 +242,7 @@ class _GameScreenState extends State<GameScreen> {
             child: Row(
               children: [
                 _MobileButton(icon: Icons.arrow_left, onTapDown: () => _game.player.simulateKey(LogicalDirection.left, true), onTapUp: () => _game.player.simulateKey(LogicalDirection.left, false)),
-                const SizedBox(width: 8),
+                const SizedBox(width: 11),
                 _MobileButton(icon: Icons.arrow_right, onTapDown: () => _game.player.simulateKey(LogicalDirection.right, true), onTapUp: () => _game.player.simulateKey(LogicalDirection.right, false)),
               ],
             ),
@@ -132,9 +253,206 @@ class _GameScreenState extends State<GameScreen> {
             child: Row(
               children: [
                 _MobileButton(icon: Icons.arrow_upward, onTapDown: () => _game.player.simulateKey(LogicalDirection.up, true), onTapUp: () => _game.player.simulateKey(LogicalDirection.up, false)),
-                const SizedBox(width: 8),
-                _MobileButton(icon: Icons.flash_on, onTapDown: () => _game.player.simulateKey(LogicalDirection.attack, true), onTapUp: () => _game.player.simulateKey(LogicalDirection.attack, false)),
+                const SizedBox(width: 11),
+                _MobileButton(icon: Icons.close, label: 'ATAK', customIcon: const Text('⚔', style: TextStyle(fontSize: 22)), onTapDown: () => _game.player.simulateKey(LogicalDirection.attack, true), onTapUp: () => _game.player.simulateKey(LogicalDirection.attack, false)),
+                const SizedBox(width: 11),
+                _MobileButton(icon: Icons.bolt, label: '⚡', color: const Color(0xFF00BFFF), onTapDown: () => _game.player.simulateKey(LogicalDirection.offhand, true), onTapUp: () => _game.player.simulateKey(LogicalDirection.offhand, false)),
               ],
+            ),
+          ),
+          // Top-right buttons
+          Positioned(
+            top: 60,
+            right: 8,
+            child: Row(
+              children: [
+                GestureDetector(
+                  onTap: () => _showCharacterSwitch(context),
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFFFD700), Color(0xFFDAA520), Color(0xFFB8860B)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      border: Border.all(color: const Color(0xFFFFF8DC), width: 2),
+                      boxShadow: [BoxShadow(color: const Color(0xFFFFD700).withOpacity(0.4), blurRadius: 6)],
+                    ),
+                    child: const Icon(Icons.autorenew, color: Color(0xFF3E2723), size: 26),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                _SmallButton(
+                  icon: Icons.exit_to_app,
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCharacterSwitch(BuildContext context) {
+    _game.paused = true;
+    PataponData selected = _game.pataponData;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            final isCurrent = selected.id == _game.pataponData.id;
+            return AlertDialog(
+              backgroundColor: const Color(0xFF1a0533),
+              contentPadding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              title: const Text('ZMIEŃ BOHATERA', style: TextStyle(color: Colors.white, fontSize: 16)),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        height: 80,
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: PataponData.allPatapons.length,
+                          itemBuilder: (context, index) {
+                            final p = PataponData.allPatapons[index];
+                            final isSelected = p.id == selected.id;
+                            return GestureDetector(
+                              onTap: () => setDialogState(() => selected = p),
+                              child: Container(
+                                width: 64,
+                                margin: const EdgeInsets.symmetric(horizontal: 2),
+                                decoration: BoxDecoration(
+                                  color: isSelected ? p.themeColor.withOpacity(0.4) : Colors.white10,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: isSelected ? p.themeColor : Colors.white24, width: isSelected ? 2 : 1),
+                                ),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(6),
+                                      child: Image.asset(p.imagePath, width: 40, height: 40, fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) => Container(width: 40, height: 40, color: p.themeColor, child: const Icon(Icons.person, color: Colors.white, size: 18))),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(p.name, style: TextStyle(color: isSelected ? Colors.white : Colors.white70, fontSize: 8), textAlign: TextAlign.center, overflow: TextOverflow.ellipsis),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.asset(selected.imagePath, width: 50, height: 50, fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(width: 50, height: 50, color: selected.themeColor, child: const Icon(Icons.person, color: Colors.white, size: 24))),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(selected.name, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: selected.themeColor)),
+                                Text(selected.description, style: const TextStyle(color: Colors.white70, fontSize: 10)),
+                                const SizedBox(height: 2),
+                                Text('★ ${selected.specialAbility}', style: const TextStyle(color: Colors.white, fontSize: 10)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      _switchHeartsRow(selected.maxHp),
+                      _switchBar('Szybkość', selected.speed / 220, Colors.blue),
+                      _switchBar('Skok', selected.jumpForce / 420, Colors.orange),
+                      _switchBar('Zasięg', selected.attackRange / 200, Colors.green),
+                      const SizedBox(height: 6),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF00BFFF).withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFF00BFFF).withOpacity(0.4)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('⚡ ${selected.offhandName}', style: const TextStyle(color: Color(0xFF00BFFF), fontSize: 12, fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 2),
+                            Text(selected.offhandDescription, style: const TextStyle(color: Colors.white70, fontSize: 10)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isCurrent ? Colors.grey.shade700 : selected.themeColor,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                    ),
+                    onPressed: () {
+                      if (!isCurrent) _game.switchCharacter(selected);
+                      Navigator.of(ctx).pop();
+                      _game.paused = false;
+                    },
+                    child: Text(
+                      isCurrent ? 'OK' : 'WYBIERZ',
+                      style: const TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  static Widget _switchHeartsRow(int hearts) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Row(
+        children: [
+          const SizedBox(width: 55, child: Text('Życie', style: TextStyle(color: Colors.white70, fontSize: 10))),
+          ...List.generate(hearts, (_) => const Padding(padding: EdgeInsets.only(right: 1), child: Icon(Icons.favorite, color: Colors.red, size: 12))),
+        ],
+      ),
+    );
+  }
+
+  static Widget _switchBar(String label, double value, Color color) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Row(
+        children: [
+          SizedBox(width: 55, child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 10))),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: LinearProgressIndicator(value: value.clamp(0, 1), backgroundColor: Colors.white12, color: color, minHeight: 6),
             ),
           ),
         ],
@@ -143,14 +461,17 @@ class _GameScreenState extends State<GameScreen> {
   }
 }
 
-enum LogicalDirection { left, right, up, attack }
+enum LogicalDirection { left, right, up, attack, offhand }
 
 class _MobileButton extends StatelessWidget {
   final IconData icon;
+  final String? label;
+  final Color? color;
+  final Widget? customIcon;
   final VoidCallback onTapDown;
   final VoidCallback onTapUp;
 
-  const _MobileButton({required this.icon, required this.onTapDown, required this.onTapUp});
+  const _MobileButton({required this.icon, this.label, this.color, this.customIcon, required this.onTapDown, required this.onTapUp});
 
   @override
   Widget build(BuildContext context) {
@@ -159,14 +480,42 @@ class _MobileButton extends StatelessWidget {
       onTapUp: (_) => onTapUp(),
       onTapCancel: onTapUp,
       child: Container(
-        width: 56,
-        height: 56,
+        width: 68,
+        height: 68,
         decoration: BoxDecoration(
-          color: Colors.white24,
+          color: color?.withOpacity(0.3) ?? Colors.white24,
           shape: BoxShape.circle,
-          border: Border.all(color: Colors.white38, width: 2),
+          border: Border.all(color: color?.withOpacity(0.6) ?? Colors.white38, width: 2),
         ),
-        child: Icon(icon, color: Colors.white70, size: 28),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (customIcon != null) customIcon! else Icon(icon, color: color ?? Colors.white70, size: label != null ? 24 : 34),
+            if (label != null)
+              Text(label!, style: TextStyle(color: color ?? Colors.white70, fontSize: 10, fontWeight: FontWeight.bold)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+class _SmallButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _SmallButton({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(color: Colors.black38, shape: BoxShape.circle),
+        child: Icon(icon, color: Colors.white70, size: 18),
       ),
     );
   }
@@ -181,14 +530,16 @@ class _GameOverOverlay extends StatelessWidget {
     return Center(
       child: Container(
         padding: const EdgeInsets.all(32),
-        decoration: BoxDecoration(
-          color: Colors.black87,
-          borderRadius: BorderRadius.circular(16),
-        ),
+        decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(16)),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text('GAME OVER', style: TextStyle(fontSize: 40, color: Colors.red, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Text(
+              game.currentLevel > 0 ? 'Cofasz się do poziomu ${game.currentLevel}' : '',
+              style: const TextStyle(color: Colors.white70, fontSize: 16),
+            ),
             const SizedBox(height: 24),
             ElevatedButton(
               onPressed: () {
@@ -215,13 +566,11 @@ class _LevelCompleteOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final nextLevel = game.currentLevel + 1;
     return Center(
       child: Container(
         padding: const EdgeInsets.all(32),
-        decoration: BoxDecoration(
-          color: Colors.black87,
-          borderRadius: BorderRadius.circular(16),
-        ),
+        decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(16)),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -231,10 +580,319 @@ class _LevelCompleteOverlay extends StatelessWidget {
               'Monety: ${game.stateNotifier.value.coins}',
               style: const TextStyle(fontSize: 20, color: Colors.amber),
             ),
+            const SizedBox(height: 4),
+            Text(
+              'Następny: ${GameLevel.nameFor(nextLevel)}',
+              style: const TextStyle(fontSize: 16, color: Colors.white70),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: () => game.nextLevel(),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+              child: const Text('NASTĘPNY LEVEL', style: TextStyle(fontSize: 18, color: Colors.white)),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('MENU', style: TextStyle(color: Colors.white70)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GameWonOverlay extends StatelessWidget {
+  final PataGame game;
+  const _GameWonOverlay({required this.game});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.all(32),
+        decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(16)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('GRATULACJE!', style: TextStyle(fontSize: 40, color: Colors.amber, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            const Text('Ukończyłeś wszystkie levele!', style: TextStyle(fontSize: 20, color: Colors.white)),
+            const SizedBox(height: 8),
+            Text('Monety: ${game.stateNotifier.value.coins}', style: const TextStyle(fontSize: 20, color: Colors.amber)),
             const SizedBox(height: 24),
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
               child: const Text('WRÓĆ DO MENU', style: TextStyle(color: Colors.white70, fontSize: 18)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _UpgradeChoiceOverlay extends StatelessWidget {
+  final PataGame game;
+  const _UpgradeChoiceOverlay({required this.game});
+
+  @override
+  Widget build(BuildContext context) {
+    final state = game.stateNotifier.value;
+    final weaponNext = state.weaponLevel + 1;
+    final speedNext = state.speedLevel + 1;
+    final jumpNext = state.jumpLevel + 1;
+
+    const weaponLabels = ['150%', '200%', '250%', '300%'];
+    const speedLabels = ['130%', '160%', '190%', '210%'];
+    const jumpLabels = ['130%', '160%', '190%', '210%'];
+
+    final weaponText = weaponNext <= weaponLabels.length ? weaponLabels[weaponNext - 1] : 'MAX';
+    final speedText = speedNext <= speedLabels.length ? speedLabels[speedNext - 1] : 'MAX';
+    final jumpText = jumpNext <= jumpLabels.length ? jumpLabels[jumpNext - 1] : 'MAX';
+
+    final canWeapon = weaponNext <= 4;
+    final canSpeed = speedNext <= 4;
+    final canJump = jumpNext <= 4;
+
+    return Container(
+      color: Colors.black.withOpacity(0.85),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'POWER UP!',
+              style: TextStyle(
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFFFFD700),
+                shadows: [Shadow(color: Color(0xFFFF8C00), blurRadius: 12)],
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Koszt: ${state.nextUpgradeCost} monet',
+              style: const TextStyle(color: Colors.amber, fontSize: 14),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _UpgradeCard(
+                  title: 'BIG HIT',
+                  icon: Icons.gavel,
+                  level: weaponNext,
+                  description: weaponText,
+                  gradient: const [Color(0xFFFF6B00), Color(0xFFFF2200)],
+                  enabled: canWeapon,
+                  onTap: canWeapon ? () => game.applyUpgrade('weapon') : null,
+                ),
+                const SizedBox(width: 12),
+                _UpgradeCard(
+                  title: 'SPEED',
+                  icon: Icons.speed,
+                  level: speedNext,
+                  description: canSpeed ? speedText : 'MAX',
+                  gradient: const [Color(0xFF00BCD4), Color(0xFF0077FF)],
+                  enabled: canSpeed,
+                  onTap: canSpeed ? () => game.applyUpgrade('speed') : null,
+                ),
+                const SizedBox(width: 12),
+                _UpgradeCard(
+                  title: 'JUMP',
+                  icon: Icons.arrow_upward,
+                  level: jumpNext,
+                  description: canJump ? jumpText : 'MAX',
+                  gradient: const [Color(0xFF4CAF50), Color(0xFF00C853)],
+                  enabled: canJump,
+                  onTap: canJump ? () => game.applyUpgrade('jump') : null,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BossIntroOverlay extends StatefulWidget {
+  final PataGame game;
+  const _BossIntroOverlay({required this.game});
+
+  @override
+  State<_BossIntroOverlay> createState() => _BossIntroOverlayState();
+}
+
+class _BossIntroOverlayState extends State<_BossIntroOverlay> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _fadeIn;
+  late Animation<double> _nameScale;
+  late Animation<double> _flashOpacity;
+  late Animation<double> _fadeOut;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 2500));
+
+    _fadeIn = Tween(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: const Interval(0.0, 0.2, curve: Curves.easeIn)),
+    );
+    _nameScale = Tween(begin: 3.0, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: const Interval(0.25, 0.5, curve: Curves.elasticOut)),
+    );
+    _flashOpacity = Tween(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: const Interval(0.7, 0.8, curve: Curves.easeIn)),
+    );
+    _fadeOut = Tween(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(parent: _controller, curve: const Interval(0.85, 1.0, curve: Curves.easeOut)),
+    );
+
+    _controller.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        widget.game.finishBossIntro();
+      }
+    });
+
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        return Stack(
+          children: [
+            // Black background
+            Positioned.fill(
+              child: Container(
+                color: Colors.black.withOpacity(_fadeIn.value * _fadeOut.value),
+              ),
+            ),
+            // Boss name
+            if (_controller.value > 0.25)
+              Center(
+                child: Transform.scale(
+                  scale: _nameScale.value,
+                  child: Opacity(
+                    opacity: _fadeOut.value,
+                    child: const Text(
+                      'BOSS!',
+                      style: TextStyle(
+                        fontSize: 48,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.red,
+                        shadows: [
+                          Shadow(color: Colors.redAccent, blurRadius: 20),
+                          Shadow(color: Colors.orange, blurRadius: 40),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            // White flash
+            if (_controller.value > 0.7)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Container(
+                    color: Colors.white.withOpacity(_flashOpacity.value * _fadeOut.value * 0.8),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _UpgradeCard extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final int level;
+  final String description;
+  final List<Color> gradient;
+  final bool enabled;
+  final VoidCallback? onTap;
+
+  const _UpgradeCard({
+    required this.title,
+    required this.icon,
+    required this.level,
+    required this.description,
+    required this.gradient,
+    this.enabled = true,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 100,
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          gradient: enabled
+              ? LinearGradient(colors: gradient, begin: Alignment.topLeft, end: Alignment.bottomRight)
+              : null,
+          color: enabled ? null : Colors.grey[800],
+          border: Border.all(
+            color: enabled ? Colors.white.withOpacity(0.4) : Colors.grey[600]!,
+            width: 2,
+          ),
+          boxShadow: enabled
+              ? [BoxShadow(color: gradient[0].withOpacity(0.4), blurRadius: 12, spreadRadius: 1)]
+              : null,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: enabled ? Colors.white : Colors.grey, size: 36),
+            const SizedBox(height: 8),
+            Text(
+              title,
+              style: TextStyle(
+                color: enabled ? Colors.white : Colors.grey,
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.black26,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'Lv.$level',
+                style: TextStyle(
+                  color: enabled ? Colors.white70 : Colors.grey,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              description,
+              style: TextStyle(
+                color: enabled ? const Color(0xFFFFD700) : Colors.grey,
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ],
         ),

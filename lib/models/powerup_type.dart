@@ -17,9 +17,9 @@ enum PowerUpType {
   ),
   shield(
     label: 'Tarcza',
-    description: 'Absorbujesz 1 trafienie',
+    description: 'Nieśmiertelność przez 30 sekund',
     color: Color(0xFF7B68EE),
-    duration: 0,
+    duration: 30,
     icon: '🛡️',
   ),
   bigWeapon(
@@ -35,6 +35,13 @@ enum PowerUpType {
     color: Color(0xFF32CD32),
     duration: 0,
     icon: '🌭',
+  ),
+  angelProtection(
+    label: 'Anielska Ochrona',
+    description: 'Ratuje raz od śmierci lub przepaści',
+    color: Color(0xFF1a1a1a),
+    duration: 0,
+    icon: '💛',
   );
 
   final String label;
