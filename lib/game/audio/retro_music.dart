@@ -1,3 +1,4 @@
+import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/services.dart' show rootBundle;
@@ -12,10 +13,9 @@ AudioContext buildGameAudioContext() => AudioContext(
         usageType: AndroidUsageType.media,
         audioFocus: AndroidAudioFocus.none,
       ),
-      iOS: AudioContextIOS(
-        category: AVAudioSessionCategory.ambient,
-        options: const {AVAudioSessionOptions.mixWithOthers},
-      ),
+      // `ambient` already mixes with other audio; passing `mixWithOthers`
+      // with it trips an assert in AudioContextIOS (debug builds didn't start).
+      iOS: AudioContextIOS(category: AVAudioSessionCategory.ambient),
     );
 
 class _Ev implements Comparable<_Ev> {
@@ -40,13 +40,119 @@ class RetroMusic {
   RetroMusic._();
   static final RetroMusic instance = RetroMusic._();
   static const int _sr = 44100;
+  // One rendered track is several MB of WAV, so only the most recently used
+  // ones are kept (menu, current level, upcoming boss + one spare).
+  static const int _maxCachedTracks = 4;
 
   AudioPlayer? _player;
-  Synthesizer? _synth;
+  ByteData? _soundFont;
   Future<void>? _initFuture;
 
   int _currentKey = -1;
-  final Map<int, Uint8List> _cache = {};
+  final Map<int, Uint8List> _cache = {}; // insertion order = LRU order
+  final Map<int, Future<Uint8List>> _rendering = {};
+
+  Future<void> init() => _initFuture ??= _doInit();
+
+  Future<void> _doInit() async {
+    await AudioPlayer.global.setAudioContext(buildGameAudioContext());
+
+    _soundFont = await rootBundle.load('assets/soundfont/TimGM.sf2');
+
+    final p = AudioPlayer();
+    await p.setAudioContext(buildGameAudioContext());
+    await p.setReleaseMode(ReleaseMode.loop);
+    await p.setVolume(0.72);
+    _player = p;
+  }
+
+  Future<void> playMenu() => _switchTo(0);
+
+  Future<void> playLevel(int lv) async {
+    await _switchTo(lv.clamp(1, 10));
+    // Render the next boss theme in the background while the level is being
+    // played, so the boss intro doesn't have to wait for it.
+    _track(_nextBossKey).ignore();
+  }
+
+  static final _bossRng = Random();
+  int _nextBossKey = 99 + _bossRng.nextInt(16);
+
+  Future<void> playBoss() {
+    final key = _nextBossKey;
+    _nextBossKey = 99 + _bossRng.nextInt(16);
+    return _switchTo(key);
+  }
+
+  Future<void> _switchTo(int key) async {
+    await init();
+    if (key == _currentKey) return;
+    _currentKey = key;
+    final Uint8List wav;
+    try {
+      wav = await _track(key);
+    } catch (_) {
+      if (key == _currentKey) _currentKey = -1;
+      return;
+    }
+    // Another track may have been requested while this one was rendering.
+    if (key != _currentKey) return;
+    try { await _player!.stop(); } catch (_) {}
+    if (key != _currentKey) return;
+    try { await _player!.play(BytesSource(wav)); } catch (_) {}
+  }
+
+  /// WAV bytes for [key], rendered on a background isolate when not cached.
+  /// Rendering a full SoundFont track takes seconds of CPU; doing it on the
+  /// UI isolate froze the game on every new level or boss track.
+  Future<Uint8List> _track(int key) {
+    final cached = _cache.remove(key);
+    if (cached != null) {
+      _cache[key] = cached; // re-insert as most recently used
+      return Future.value(cached);
+    }
+    return _rendering[key] ??= _render(key, _soundFont!).then((wav) {
+      _cache[key] = wav;
+      while (_cache.length > _maxCachedTracks) {
+        _cache.remove(_cache.keys.first);
+      }
+      return wav;
+    }).whenComplete(() {
+      // Block body on purpose: returning the removed future (=> form) would
+      // make whenComplete wait for itself and never complete.
+      _rendering.remove(key);
+    });
+  }
+
+  // Static so the isolate closure captures only its arguments, not `this`.
+  static Future<Uint8List> _render(int key, ByteData soundFont) =>
+      Isolate.run(() => _TrackGenerator(soundFont)._generate(key));
+
+  Future<void> stop() async {
+    _currentKey = -1;
+    try { await _player?.stop(); } catch (_) {}
+  }
+
+  void dispose() {
+    try { _player?.dispose(); } catch (_) {}
+    _player = null;
+  }
+}
+
+/// Renders the music themes. Runs on a background isolate (see
+/// [RetroMusic._render]), so it must not touch Flutter or player state.
+class _TrackGenerator {
+  _TrackGenerator(ByteData soundFont)
+      : _synth = Synthesizer.loadByteData(soundFont, SynthesizerSettings(
+          sampleRate: _sr,
+          blockSize: 64,
+          maximumPolyphony: 64,
+          enableReverbAndChorus: true,
+        ));
+
+  static const int _sr = RetroMusic._sr;
+
+  final Synthesizer _synth;
 
   static const Map<int, List<int>> _chords = {
     0: [0, 4, 7],
@@ -59,50 +165,6 @@ class RetroMusic {
     7: [0, 4, 7, 11, 14],
     8: [0, 3, 6, 10],
   };
-
-  Future<void> init() => _initFuture ??= _doInit();
-
-  Future<void> _doInit() async {
-    await AudioPlayer.global.setAudioContext(buildGameAudioContext());
-
-    final sfData = await rootBundle.load('assets/soundfont/TimGM.sf2');
-    _synth = Synthesizer.loadByteData(sfData, SynthesizerSettings(
-      sampleRate: _sr,
-      blockSize: 64,
-      maximumPolyphony: 64,
-      enableReverbAndChorus: true,
-    ));
-
-    final p = AudioPlayer();
-    await p.setAudioContext(buildGameAudioContext());
-    await p.setReleaseMode(ReleaseMode.loop);
-    await p.setVolume(0.72);
-    _player = p;
-  }
-
-  Future<void> playMenu() => _switchTo(0);
-  Future<void> playLevel(int lv) => _switchTo(lv.clamp(1, 10));
-  static final _bossRng = Random();
-  Future<void> playBoss() => _switchTo(99 + _bossRng.nextInt(16));
-
-  Future<void> _switchTo(int key) async {
-    await init();
-    if (key == _currentKey) return;
-    _currentKey = key;
-    final wav = _cache.putIfAbsent(key, () => _generate(key));
-    try { await _player!.stop(); } catch (_) {}
-    try { await _player!.play(BytesSource(wav)); } catch (_) {}
-  }
-
-  Future<void> stop() async {
-    _currentKey = -1;
-    try { await _player?.stop(); } catch (_) {}
-  }
-
-  void dispose() {
-    try { _player?.dispose(); } catch (_) {}
-    _player = null;
-  }
 
   Uint8List _generate(int key) {
     switch (key) {
@@ -212,7 +274,7 @@ class RetroMusic {
     int snareVel = 75,
     int hatVel = 55,
   }) {
-    final synth = _synth!;
+    final synth = _synth;
     synth.reset();
 
     synth.processMidiMessage(channel: 0, command: 0xC0, data1: padPreset, data2: 0);

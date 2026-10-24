@@ -95,20 +95,25 @@ class Player extends PositionComponent with KeyboardHandler, CollisionCallbacks,
 
   bool _frozen = true;
   bool _visible = true;
+  // Set by freeze() (boss intro, level end): input must not unfreeze the
+  // player then, only unfreeze() does. The initial spawn freeze is soft.
+  bool _inputLocked = false;
 
   void freeze() {
     _frozen = true;
+    _inputLocked = true;
     _visible = false;
     velocity = Vector2.zero();
   }
 
   void unfreeze() {
     _frozen = false;
+    _inputLocked = false;
     _visible = true;
   }
 
   void simulateKey(LogicalDirection dir, bool pressed) {
-    if (pressed) _frozen = false;
+    if (pressed && !_inputLocked) _frozen = false;
     switch (dir) {
       case LogicalDirection.left:
         _mobileLeft = pressed;
@@ -197,8 +202,12 @@ class Player extends PositionComponent with KeyboardHandler, CollisionCallbacks,
 
   int get meleeDamage => scaleStep > 0 ? 2 : 1;
 
+  // scaleStep persists across deaths and levels and the eagle drops a new box
+  // on every attempt, so it is capped to keep the hero playable.
+  static const int _maxScaleSteps = 2;
+
   void applyScaleStep(int delta) {
-    scaleStep += delta;
+    scaleStep = (scaleStep + delta).clamp(-_maxScaleSteps, _maxScaleSteps);
     _recalcScale();
     final baseSize = Vector2(40, 48) * 1.33;
     final oldBottom = position.y + size.y;
@@ -243,7 +252,7 @@ class Player extends PositionComponent with KeyboardHandler, CollisionCallbacks,
 
   @override
   bool onKeyEvent(KeyEvent event, Set<LogicalKeyboardKey> keysPressed) {
-    if (keysPressed.isNotEmpty) _frozen = false;
+    if (keysPressed.isNotEmpty && !_inputLocked) _frozen = false;
     _keysPressed.clear();
     _keysPressed.addAll(keysPressed);
     return false;
@@ -560,8 +569,10 @@ class Player extends PositionComponent with KeyboardHandler, CollisionCallbacks,
   double _findNextPlatformX(double currentX) {
     double bestX = currentX + 100;
     double bestDist = double.infinity;
-    for (final child in gameRef.world.children) {
-      if (child is PlatformBlock && child.size.y > 50) {
+    // Platforms are children of the level, not of the world. Invisible blocks
+    // are pit/arena walls, not ground to land on.
+    for (final child in gameRef.level.children) {
+      if (child is PlatformBlock && !child.invisible && child.size.y > 50) {
         final platLeft = child.position.x;
         final platRight = platLeft + child.size.x;
         if (platLeft > currentX && platLeft - currentX < bestDist) {

@@ -50,11 +50,13 @@ class RetroSfx {
   late final Uint8List _upgradeCheerWav;
   late final Uint8List _bossRoarWav;
 
-  bool _initialized = false;
+  Future<void>? _initFuture;
 
-  Future<void> init() async {
-    if (_initialized) return;
+  // Shared future, like RetroMusic.init(): a second call while the first is
+  // still running must not re-assign the late final fields.
+  Future<void> init() => _initFuture ??= _doInit();
 
+  Future<void> _doInit() async {
     final sfData = await rootBundle.load('assets/soundfont/TimGM.sf2');
     final sfxSynth = Synthesizer.loadByteData(sfData, SynthesizerSettings(
       sampleRate: _sr,
@@ -101,7 +103,6 @@ class RetroSfx {
       await p.setAudioContext(ctx);
       _pool.add(p);
     }
-    _initialized = true;
   }
 
   void dispose() {

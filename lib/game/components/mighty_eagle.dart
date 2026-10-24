@@ -1,4 +1,5 @@
 import 'dart:math' show Random, sin;
+import 'package:flame/cache.dart';
 import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 import '../pata_game.dart';
@@ -14,6 +15,9 @@ class MightyEagle extends PositionComponent with HasGameRef<PataGame> {
   Sprite? _sprite;
 
   static final _rng = Random();
+  // The sprite lives in assets/sprites/, not in Flame's default assets/images/.
+  // Shared cache so the image is decoded once, not on every level (re)load.
+  static final _images = Images(prefix: 'assets/sprites/');
 
   MightyEagle({required this.triggerX}) {
     size = Vector2(60, 60);
@@ -21,8 +25,13 @@ class MightyEagle extends PositionComponent with HasGameRef<PataGame> {
 
   @override
   Future<void> onLoad() async {
-    final image = await gameRef.images.load('sprites/mighty_eagle.png');
-    _sprite = Sprite(image);
+    // onLoad must never throw: a component that fails to load blocks Flame's
+    // lifecycle queue for its parent (the whole level), so the boss, arena
+    // walls and loot never get mounted and the level is never removed on
+    // restart. Without the sprite we fall back to the drawn eagle in render().
+    try {
+      _sprite = Sprite(await _images.load('mighty_eagle.png'));
+    } catch (_) {}
   }
 
   @override

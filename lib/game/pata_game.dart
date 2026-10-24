@@ -58,6 +58,36 @@ class GameState {
     this.jumpLevel = 0,
     this.powerUpToast,
   });
+
+  // Value equality: ValueNotifier only notifies when the value changes, so the
+  // HUD is rebuilt when something on it changes instead of on every frame.
+  @override
+  bool operator ==(Object other) =>
+      other is GameState &&
+      other.hp == hp &&
+      other.maxHp == maxHp &&
+      other.ammo == ammo &&
+      other.hasShield == hasShield &&
+      other.shieldTimer == shieldTimer &&
+      other.activePowerUp == activePowerUp &&
+      other.coins == coins &&
+      other.shieldMode == shieldMode &&
+      other.currentLevel == currentLevel &&
+      other.lightnings == lightnings &&
+      other.weaponLevel == weaponLevel &&
+      other.weaponMultiplier == weaponMultiplier &&
+      other.nextUpgradeCost == nextUpgradeCost &&
+      other.screenFlash == screenFlash &&
+      other.speedLevel == speedLevel &&
+      other.jumpLevel == jumpLevel &&
+      other.powerUpToast == powerUpToast;
+
+  @override
+  int get hashCode => Object.hash(
+        hp, maxHp, ammo, hasShield, shieldTimer, activePowerUp, coins,
+        shieldMode, currentLevel, lightnings, weaponLevel, weaponMultiplier,
+        nextUpgradeCost, screenFlash, speedLevel, jumpLevel, powerUpToast,
+      );
 }
 
 class PataGame extends FlameGame with HasKeyboardHandlerComponents, HasCollisionDetection {
@@ -187,6 +217,8 @@ class PataGame extends FlameGame with HasKeyboardHandlerComponents, HasCollision
   }
 
   void onPlayerDied() {
+    // Collisions keep firing after death; dying twice must not drop two levels.
+    if (gameOver || levelComplete) return;
     if (currentLevel > 1) {
       currentLevel--;
     }
@@ -250,6 +282,11 @@ class PataGame extends FlameGame with HasKeyboardHandlerComponents, HasCollision
     _powerUpToast = null;
     _powerUpToastTimer = 0;
 
+    // Dying during the boss intro must not leave it running into the new level.
+    overlays.remove('BossIntro');
+    bossIntroActive = false;
+    currentBossArena = null;
+
     _updateState();
     resumeEngine();
     await Future<void>.delayed(const Duration(milliseconds: 600));
@@ -270,7 +307,8 @@ class PataGame extends FlameGame with HasKeyboardHandlerComponents, HasCollision
       persistScaleStep: ups.scaleStep,
       persistAngelProtection: oldAngelProtection,
     );
-    player.position = spawnPos.clone();
+    // Position is left unset so Player.onLoad puts the feet on the ground for
+    // its actual (possibly grown/shrunk) size, same as on the first load.
     await world.add(player);
 
     // Let all components finish loading
@@ -352,6 +390,7 @@ class PataGame extends FlameGame with HasKeyboardHandlerComponents, HasCollision
   }
 
   void finishBossIntro() {
+    if (!bossIntroActive) return;
     overlays.remove('BossIntro');
     currentBossArena?.spawnBoss();
     bossIntroActive = false;
