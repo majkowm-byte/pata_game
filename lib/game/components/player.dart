@@ -706,7 +706,7 @@ class Player extends PositionComponent with KeyboardHandler, CollisionCallbacks,
       final label = other.scaleDirection > 0 ? 'GROW!' : 'SHRINK!';
       gameRef.showPowerUpToast(label);
     } else if (other is BossArena && !other.triggered) {
-      other.triggerBoss();
+      other.triggerBoss(this);
     }
   }
 

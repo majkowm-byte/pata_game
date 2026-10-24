@@ -23,6 +23,8 @@ class BossArena extends PositionComponent with HasGameRef<PataGame> {
   Boss? boss;
 
   static const _wallHeight = 300.0;
+  // Width of the entrance fire wall (FireWall is 24 wide, drawn from arenaX - 4).
+  static const _entranceClearance = 24.0;
 
   BossArena({
     required this.arenaX,
@@ -59,8 +61,12 @@ class BossArena extends PositionComponent with HasGameRef<PataGame> {
     add(RectangleHitbox(isSolid: true));
   }
 
-  void triggerBoss() {
+  void triggerBoss(PositionComponent player) {
     if (_triggered) return;
+    // The trigger zone starts at the wall line, so closing the entrance on
+    // first contact put the wall on top of the player and pushed them back out
+    // of the arena. Wait until they are fully past the entrance.
+    if (player.position.x < arenaX + _entranceClearance) return;
     _triggered = true;
 
     // Close the entrance with a wall — invisible collision + fire visual

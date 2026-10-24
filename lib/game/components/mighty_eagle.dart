@@ -1,16 +1,16 @@
-import 'dart:math' show Random, sin;
+import 'dart:math' show Random, max, sin;
 import 'package:flame/cache.dart';
 import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 import '../pata_game.dart';
 import 'mystery_box.dart';
+import 'platform_block.dart';
 
 class MightyEagle extends PositionComponent with HasGameRef<PataGame> {
   final double triggerX;
   bool _spawned = false;
   bool _dropped = false;
   double _wingPhase = 0;
-  double _dropX = 0;
 
   Sprite? _sprite;
 
@@ -19,8 +19,14 @@ class MightyEagle extends PositionComponent with HasGameRef<PataGame> {
   // Shared cache so the image is decoded once, not on every level (re)load.
   static final _images = Images(prefix: 'assets/sprites/');
 
+  static const _width = 90.0;
+  // Flight height below the top of the screen, clear of the HUD rows.
+  static const _skyOffset = 55.0;
+  // How far ahead of the player the box is dropped.
+  static const _dropLead = 150.0;
+
   MightyEagle({required this.triggerX}) {
-    size = Vector2(60, 60);
+    size = Vector2(_width, _width / 2);
   }
 
   @override
@@ -30,43 +36,60 @@ class MightyEagle extends PositionComponent with HasGameRef<PataGame> {
     // walls and loot never get mounted and the level is never removed on
     // restart. Without the sprite we fall back to the drawn eagle in render().
     try {
-      _sprite = Sprite(await _images.load('mighty_eagle.png'));
+      final image = await _images.load('mighty_eagle.png');
+      _sprite = Sprite(image);
+      size = Vector2(_width, _width * image.height / image.width);
     } catch (_) {}
   }
 
   @override
   void update(double dt) {
     super.update(dt);
+    final player = gameRef.player;
+    final camera = gameRef.camera.viewfinder.position;
 
     if (!_spawned) {
-      final playerX = gameRef.player.position.x;
-      if (playerX >= triggerX) {
+      if (player.position.x >= triggerX) {
         _spawned = true;
-        final cameraX = gameRef.camera.viewfinder.position.x;
-        final screenW = gameRef.size.x;
-        position = Vector2(cameraX - 80, 120);
-        _dropX = cameraX + screenW * 0.5;
+        position = Vector2(camera.x - size.x, camera.y + _skyOffset);
       }
       return;
     }
 
     _wingPhase += dt * 8;
-    position.x += 220 * dt;
-    position.y = 120 + sin(_wingPhase) * 15;
+    // Always faster than the player, so it overtakes them and the box lands
+    // ahead. (Flying at a fixed 220 px/s to a fixed point, the box landed
+    // behind a running player.)
+    position.x += (220 + max(0.0, player.velocity.x)) * dt;
+    // Stay near the top of the screen; the camera follows the player's height
+    // (at a fixed y = 120 the eagle flew above the visible area).
+    position.y = camera.y + _skyOffset + sin(_wingPhase) * 15;
 
-    if (!_dropped && position.x >= _dropX) {
+    final centerX = position.x + size.x / 2;
+    if (!_dropped &&
+        centerX >= player.position.x + player.size.x + _dropLead &&
+        _isOverGround(centerX)) {
       _dropped = true;
       final direction = _rng.nextBool() ? 1 : -1;
       parent?.add(MysteryBox(
-        pos: Vector2(_dropX, position.y + size.y),
+        pos: Vector2(centerX - 16, position.y + size.y),
         scaleDirection: direction,
       ));
     }
 
-    if (position.x > _dropX + 800) {
+    if (_dropped && position.x > camera.x + gameRef.size.x + 100) {
       removeFromParent();
     }
   }
+
+  // MysteryBox always settles at ground height, so drop it only above solid
+  // ground, never above a pit.
+  bool _isOverGround(double x) =>
+      parent!.children.whereType<PlatformBlock>().any((p) =>
+          !p.invisible &&
+          p.size.y >= 50 &&
+          p.position.x <= x - 16 &&
+          p.position.x + p.size.x >= x + 16);
 
   @override
   void render(Canvas canvas) {
