@@ -1,3 +1,4 @@
+import 'dart:ui' show Offset;
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flame/game.dart';
@@ -407,13 +408,19 @@ class PataGame extends FlameGame with HasKeyboardHandlerComponents, HasCollision
     }
   }
 
-  void showUpgradeChoice() {
+  /// Screen position of the coin that triggered the level-up screen, or null
+  /// while it isn't shown. GameScreen draws that screen above the HUD.
+  final ValueNotifier<Offset?> levelUpCoin = ValueNotifier(null);
+
+  void showUpgradeChoice(Vector2 coinCenter) {
+    if (levelUpCoin.value != null || gameOver || levelComplete) return;
     paused = true;
-    overlays.add('UpgradeChoice');
+    final screen = camera.localToGlobal(coinCenter);
+    levelUpCoin.value = Offset(screen.x, screen.y);
   }
 
   void applyUpgrade(String type) {
-    overlays.remove('UpgradeChoice');
+    levelUpCoin.value = null;
     paused = false;
 
     player.coins -= player.nextUpgradeCost;

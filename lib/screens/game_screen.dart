@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../game/pata_game.dart';
 import '../game/levels/level.dart';
 import '../models/patapon_data.dart';
+import 'level_up_overlay.dart';
 
 class GameScreen extends StatefulWidget {
   final PataponData pataponData;
@@ -40,7 +41,6 @@ class _GameScreenState extends State<GameScreen> {
               'GameOver': (context, game) => _GameOverOverlay(game: game),
               'LevelComplete': (context, game) => _LevelCompleteOverlay(game: game),
               'GameWon': (context, game) => _GameWonOverlay(game: game),
-              'UpgradeChoice': (context, game) => _UpgradeChoiceOverlay(game: game),
               'BossIntro': (context, game) => _BossIntroOverlay(game: game),
             },
           ),
@@ -291,6 +291,14 @@ class _GameScreenState extends State<GameScreen> {
                 ),
               ],
             ),
+          ),
+          // Level-up screen goes last, above the HUD and the controls, so the
+          // fade to black covers the whole screen and nothing under it reacts.
+          ValueListenableBuilder<Offset?>(
+            valueListenable: _game.levelUpCoin,
+            builder: (context, coin, _) => coin == null
+                ? const SizedBox.shrink()
+                : Positioned.fill(child: LevelUpOverlay(game: _game, coin: coin)),
           ),
         ],
       ),
@@ -633,91 +641,6 @@ class _GameWonOverlay extends StatelessWidget {
   }
 }
 
-class _UpgradeChoiceOverlay extends StatelessWidget {
-  final PataGame game;
-  const _UpgradeChoiceOverlay({required this.game});
-
-  @override
-  Widget build(BuildContext context) {
-    final state = game.stateNotifier.value;
-    final weaponNext = state.weaponLevel + 1;
-    final speedNext = state.speedLevel + 1;
-    final jumpNext = state.jumpLevel + 1;
-
-    const weaponLabels = ['150%', '200%', '250%', '300%'];
-    const speedLabels = ['130%', '160%', '190%', '210%'];
-    const jumpLabels = ['130%', '160%', '190%', '210%'];
-
-    final weaponText = weaponNext <= weaponLabels.length ? weaponLabels[weaponNext - 1] : 'MAX';
-    final speedText = speedNext <= speedLabels.length ? speedLabels[speedNext - 1] : 'MAX';
-    final jumpText = jumpNext <= jumpLabels.length ? jumpLabels[jumpNext - 1] : 'MAX';
-
-    final canWeapon = weaponNext <= 4;
-    final canSpeed = speedNext <= 4;
-    final canJump = jumpNext <= 4;
-
-    return Container(
-      color: Colors.black.withOpacity(0.85),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'POWER UP!',
-              style: TextStyle(
-                fontSize: 32,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFFFFD700),
-                shadows: [Shadow(color: Color(0xFFFF8C00), blurRadius: 12)],
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Koszt: ${state.nextUpgradeCost} monet',
-              style: const TextStyle(color: Colors.amber, fontSize: 14),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _UpgradeCard(
-                  title: 'BIG HIT',
-                  icon: Icons.gavel,
-                  level: weaponNext,
-                  description: weaponText,
-                  gradient: const [Color(0xFFFF6B00), Color(0xFFFF2200)],
-                  enabled: canWeapon,
-                  onTap: canWeapon ? () => game.applyUpgrade('weapon') : null,
-                ),
-                const SizedBox(width: 12),
-                _UpgradeCard(
-                  title: 'SPEED',
-                  icon: Icons.speed,
-                  level: speedNext,
-                  description: canSpeed ? speedText : 'MAX',
-                  gradient: const [Color(0xFF00BCD4), Color(0xFF0077FF)],
-                  enabled: canSpeed,
-                  onTap: canSpeed ? () => game.applyUpgrade('speed') : null,
-                ),
-                const SizedBox(width: 12),
-                _UpgradeCard(
-                  title: 'JUMP',
-                  icon: Icons.arrow_upward,
-                  level: jumpNext,
-                  description: canJump ? jumpText : 'MAX',
-                  gradient: const [Color(0xFF4CAF50), Color(0xFF00C853)],
-                  enabled: canJump,
-                  onTap: canJump ? () => game.applyUpgrade('jump') : null,
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _BossIntroOverlay extends StatefulWidget {
   final PataGame game;
   const _BossIntroOverlay({required this.game});
@@ -813,90 +736,6 @@ class _BossIntroOverlayState extends State<_BossIntroOverlay> with SingleTickerP
           ],
         );
       },
-    );
-  }
-}
-
-class _UpgradeCard extends StatelessWidget {
-  final String title;
-  final IconData icon;
-  final int level;
-  final String description;
-  final List<Color> gradient;
-  final bool enabled;
-  final VoidCallback? onTap;
-
-  const _UpgradeCard({
-    required this.title,
-    required this.icon,
-    required this.level,
-    required this.description,
-    required this.gradient,
-    this.enabled = true,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 100,
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          gradient: enabled
-              ? LinearGradient(colors: gradient, begin: Alignment.topLeft, end: Alignment.bottomRight)
-              : null,
-          color: enabled ? null : Colors.grey[800],
-          border: Border.all(
-            color: enabled ? Colors.white.withOpacity(0.4) : Colors.grey[600]!,
-            width: 2,
-          ),
-          boxShadow: enabled
-              ? [BoxShadow(color: gradient[0].withOpacity(0.4), blurRadius: 12, spreadRadius: 1)]
-              : null,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: enabled ? Colors.white : Colors.grey, size: 36),
-            const SizedBox(height: 8),
-            Text(
-              title,
-              style: TextStyle(
-                color: enabled ? Colors.white : Colors.grey,
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.black26,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                'Lv.$level',
-                style: TextStyle(
-                  color: enabled ? Colors.white70 : Colors.grey,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              description,
-              style: TextStyle(
-                color: enabled ? const Color(0xFFFFD700) : Colors.grey,
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

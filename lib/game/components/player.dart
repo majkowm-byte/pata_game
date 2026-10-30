@@ -5,6 +5,7 @@ import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../models/patapon_data.dart';
+import '../../models/potion_type.dart';
 import '../../models/powerup_type.dart';
 import '../../screens/game_screen.dart' show LogicalDirection;
 import '../pata_game.dart';
@@ -21,6 +22,7 @@ import 'boss_arena.dart';
 import 'particle_effect.dart';
 import 'lightning_pickup.dart';
 import 'mystery_box.dart';
+import 'potion.dart';
 
 class Player extends PositionComponent with KeyboardHandler, CollisionCallbacks, HasGameRef<PataGame> {
   final PataponData pataponData;
@@ -593,9 +595,17 @@ class Player extends PositionComponent with KeyboardHandler, CollisionCallbacks,
     _burnTick = 1.0;
   }
 
-  void _tryWeaponUpgrade() {
-    if (coins >= nextUpgradeCost) {
-      gameRef.showUpgradeChoice();
+  // Matches the 4 steps per upgrade offered on the level-up screen.
+  static const maxUpgradeLevel = 4;
+
+  bool get _allUpgradesMaxed =>
+      weaponLevel >= maxUpgradeLevel && speedLevel >= maxUpgradeLevel && jumpLevel >= maxUpgradeLevel;
+
+  void _tryWeaponUpgrade(Vector2 coinCenter) {
+    // With everything maxed the level-up screen would have no card to pick
+    // and the game would stay paused for good.
+    if (coins >= nextUpgradeCost && !_allUpgradesMaxed) {
+      gameRef.showUpgradeChoice(coinCenter);
     }
   }
 
@@ -656,6 +666,21 @@ class Player extends PositionComponent with KeyboardHandler, CollisionCallbacks,
     }
   }
 
+  void _drinkPotion(PotionType type) {
+    final heal = type.heal;
+    hp = heal == null ? pataponData.maxHp : (hp + heal).clamp(0, pataponData.maxHp);
+    switch (type) {
+      case PotionType.badziew:
+        RetroSfx.instance.potionBadziew();
+      case PotionType.spoko:
+        RetroSfx.instance.potionSpoko();
+      case PotionType.superowa:
+        RetroSfx.instance.potionSuper();
+    }
+    gameRef.world.add(CollectEffect(pos: position + size / 2, color: type.color));
+    gameRef.world.add(PotionPopup(type: type, pos: Vector2(position.x + size.x / 2, position.y - 6)));
+  }
+
   @override
   void onCollision(Set<Vector2> intersectionPoints, PositionComponent other) {
     super.onCollision(intersectionPoints, other);
@@ -686,12 +711,15 @@ class Player extends PositionComponent with KeyboardHandler, CollisionCallbacks,
       coins++;
       RetroSfx.instance.coin();
       gameRef.world.add(CollectEffect(pos: other.position + other.size / 2, color: const Color(0xFFFFD700)));
-      _tryWeaponUpgrade();
+      _tryWeaponUpgrade(other.position + other.size / 2);
     } else if (other is LightningPickup && !other.collected) {
       other.collect();
       lightnings++;
       RetroSfx.instance.coin();
       gameRef.world.add(CollectEffect(pos: other.position + other.size / 2, color: const Color(0xFF00BFFF)));
+    } else if (other is Potion && other.canBePicked) {
+      other.collect();
+      _drinkPotion(other.type);
     } else if (other is FinishFlag) {
       (gameRef).onLevelComplete();
     } else if (other is Boss && !other.isDead) {

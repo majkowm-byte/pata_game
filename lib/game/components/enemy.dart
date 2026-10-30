@@ -3,8 +3,10 @@ import 'dart:ui' as ui;
 import 'package:flame/collisions.dart';
 import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
+import '../../models/potion_type.dart';
 import 'lightning_pickup.dart';
 import 'fire_breath.dart';
+import 'potion.dart';
 import '../pata_game.dart';
 
 class Enemy extends PositionComponent with CollisionCallbacks, HasGameRef<PataGame> {
@@ -102,6 +104,13 @@ class Enemy extends PositionComponent with CollisionCallbacks, HasGameRef<PataGa
             position.x + size.x / 2 - 10 + (i - 1) * 15,
             position.y,
           )));
+        }
+        // Fat mobs also drop a random healing potion at their feet.
+        if (isBoss) {
+          parent?.add(Potion(
+            type: PotionType.random(_rng),
+            feet: Vector2(position.x + size.x / 2, position.y + size.y),
+          ));
         }
       }
       if (_deathTimer > 0.6) removeFromParent();

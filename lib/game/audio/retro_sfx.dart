@@ -49,6 +49,9 @@ class RetroSfx {
   late final Uint8List _switchHeroWav;
   late final Uint8List _upgradeCheerWav;
   late final Uint8List _bossRoarWav;
+  late final Uint8List _potionBadziewWav;
+  late final Uint8List _potionSpokoWav;
+  late final Uint8List _potionSuperWav;
 
   Future<void>? _initFuture;
 
@@ -96,6 +99,25 @@ class RetroSfx {
       [84, 130, 195, 95],
       [88, 195, 400, 100],
     ]);
+    // Potions: sad trombone "wah-wah-waaah" for the junk one, a pleasant
+    // vibraphone chime for the decent one, a brass fanfare for the super one.
+    _potionBadziewWav = _sfxRender(sfxSynth, 57, [
+      [58, 0, 150, 85],
+      [57, 150, 300, 85],
+      [56, 300, 450, 85],
+      [55, 450, 900, 90],
+    ], tailSec: 0.25);
+    _potionSpokoWav = _sfxRender(sfxSynth, 11, [
+      [76, 0, 140, 100],
+      [81, 120, 520, 105],
+    ], tailSec: 0.4, gain: 1.6);
+    _potionSuperWav = _sfxRender(sfxSynth, 61, [
+      [72, 0, 100, 100],
+      [76, 100, 200, 100],
+      [79, 200, 300, 105],
+      [84, 300, 800, 115],
+      [88, 300, 800, 105],
+    ], tailSec: 0.4);
 
     final ctx = buildGameAudioContext();
     for (int i = 0; i < _poolSize; i++) {
@@ -123,6 +145,9 @@ class RetroSfx {
   Future<void> switchHero() => _play(_switchHeroWav);
   Future<void> upgradeCheer() => _play(_upgradeCheerWav);
   Future<void> bossRoar() => _play(_bossRoarWav);
+  Future<void> potionBadziew() => _play(_potionBadziewWav);
+  Future<void> potionSpoko() => _play(_potionSpokoWav);
+  Future<void> potionSuper() => _play(_potionSuperWav);
 
   Future<void> _play(Uint8List wavBytes) async {
     final player = _pool[_poolIndex % _poolSize];
