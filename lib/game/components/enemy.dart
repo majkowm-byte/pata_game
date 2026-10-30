@@ -15,6 +15,8 @@ class Enemy extends PositionComponent with CollisionCallbacks, HasGameRef<PataGa
   final double patrolRange;
 
   static final Random _rng = Random();
+  // Chance that a small mob drops a potion; fat mobs always drop one.
+  static const double _smallPotionChance = 0.35;
 
   late final int maxHp;
   late final bool isBoss;
@@ -105,8 +107,9 @@ class Enemy extends PositionComponent with CollisionCallbacks, HasGameRef<PataGa
             position.y,
           )));
         }
-        // Fat mobs also drop a random healing potion at their feet.
-        if (isBoss) {
+        // Healing potion at the mob's feet: always from fat mobs, sometimes
+        // from small ones.
+        if (isBoss || _rng.nextDouble() < _smallPotionChance) {
           parent?.add(Potion(
             type: PotionType.random(_rng),
             feet: Vector2(position.x + size.x / 2, position.y + size.y),
